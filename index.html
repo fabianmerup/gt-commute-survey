@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Pendlingsenkät | Bardo</title>
+  <meta name="description" content="Kartlägg pendlingsrelaterade utsläpp enligt GHG-protokollets Scope 3 Kategori 7.">
+  <meta property="og:title" content="Pendlingsenkät – GHG Protocol Scope 3 Kategori 7">
+  <meta property="og:description" content="Hjälp oss kartlägga pendlingsrelaterade utsläpp med distance-based method.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link href="https://framerusercontent.com/images/usjDcfosy61h3OYZDMSoUekEYU4.svg" rel="icon">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    @font-face {
+      font-family: "YWFT Natux";
+      src: url("https://framerusercontent.com/assets/ypKjKmwawtLmxeibOTNPYwWHIw.woff2");
+      font-display: swap; font-style: normal; font-weight: 400;
+    }
+    :root {
+      --bg: #F7F8FA; --surface: #FFFFFF;
+      --card: linear-gradient(135deg, #FFFFFF 0%, #F9FAFB 100%);
+      --card-flat: #F3F4F6;
+      --card-border: #E5E7EB;
+      --card-hover: linear-gradient(135deg, rgba(16,185,154,0.06) 0%, rgba(16,185,154,0.02) 100%);
+      --card-hover-border: rgba(16,185,154,0.35);
+      --card-sel: linear-gradient(135deg, rgba(16,185,154,0.10) 0%, rgba(16,185,154,0.04) 100%);
+      --card-sel-border: #10B99A;
+      --text: #111827; --text-2: #6B7280; --text-3: #9CA3AF;
+      --cyan: #10B99A; --cyan-dim: rgba(16,185,154,0.2); --coral: #E8724A;
+      --purple: #7B61FF;
+      --radius: 14px; --transition: 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-font-smoothing: antialiased; height: 100%; }
+    body {
+      font-family: "Inter", system-ui, sans-serif; font-size: 16px; line-height: 1.5;
+      color: var(--text); background: var(--bg); height: 100%; overflow: hidden;
+    }
+    #app { display: flex; flex-direction: column; height: 100dvh; position: relative; z-index: 1; }
+
+    .ambient { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+    .orb { position: absolute; border-radius: 50%; filter: blur(120px); will-change: transform; opacity: 0.08; }
+    .orb-1 { width: 600px; height: 600px; background: radial-gradient(circle, var(--cyan), transparent 70%); top: -20%; right: -10%; animation: drift1 30s ease-in-out infinite; }
+    .orb-2 { width: 500px; height: 500px; background: radial-gradient(circle, var(--coral), transparent 70%); bottom: -15%; left: -10%; animation: drift2 25s ease-in-out infinite; }
+    .orb-3 { width: 400px; height: 400px; background: radial-gradient(circle, var(--purple), transparent 70%); top: 40%; left: 50%; animation: drift3 35s ease-in-out infinite; }
+    @keyframes drift1 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-80px, 60px); } }
+    @keyframes drift2 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(60px,-50px); } }
+    @keyframes drift3 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-40px,-80px); } }
+    .grid-overlay {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image: radial-gradient(circle, rgba(0,0,0,0.03) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+
+    .progress { height: 4px; background: #E5E7EB; position: relative; z-index: 10; flex-shrink: 0; opacity: 0; transition: opacity 0.4s; }
+    .progress.visible { opacity: 1; }
+    .progress-fill {
+      height: 100%; background: linear-gradient(90deg, var(--cyan), #34D9B0);
+      transition: width 0.5s cubic-bezier(0.32,0.72,0,1);
+      box-shadow: 0 0 8px rgba(16,185,154,0.3); border-radius: 0 2px 2px 0;
+    }
+    @media (min-width: 1200px) { .progress { height: 5px; } }
+
+    .header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 24px; flex-shrink: 0; position: relative; z-index: 10;
+      opacity: 0; transition: opacity 0.4s;
+    }
+    .header.visible { opacity: 1; }
+    .logo svg { height: 18px; display: block; }
+    .step-label { font-size: 13px; color: var(--text-3); font-weight: 500; letter-spacing: 0.02em; }
+    .method-label {
+      font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+      color: var(--text-3); background: #FFFFFF; text-transform: uppercase;
+      border: 1px solid #E5E7EB; border-radius: 6px;
+      padding: 4px 10px; position: absolute; left: 50%; transform: translateX(-50%);
+    }
+
+    .viewport { flex: 1; position: relative; overflow: hidden; }
+    .slide {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      padding: 0 24px 24px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), opacity 0.35s ease;
+    }
+    .slide.active { transform: translateX(0); opacity: 1; pointer-events: auto; }
+    .slide.exit-left { transform: translateX(-50px); opacity: 0; pointer-events: none; }
+    .slide.exit-right { transform: translateX(50px); opacity: 0; pointer-events: none; }
+    .slide.enter-right { transform: translateX(50px); opacity: 0; pointer-events: none; }
+    .slide.enter-left { transform: translateX(-50px); opacity: 0; pointer-events: none; }
+    .slide-inner { max-width: min(560px, 90vw); margin: 0 auto; width: 100%; padding-top: 8px; }
+    @media (min-width: 1000px) {
+      .slide-inner { max-width: 660px; }
+      .slide { padding: 0 48px 32px; }
+      .q-title { font-size: 1.6rem; }
+      .q-desc { font-size: 15px; }
+      .option-card { padding: 18px 22px; }
+      .option-card .card-label { font-size: 15.5px; }
+    }
+    @media (min-width: 1400px) {
+      .slide-inner { max-width: 760px; }
+      .q-title { font-size: 1.85rem; }
+      .q-desc { font-size: 16px; margin-bottom: 28px; }
+      .option-card { padding: 20px 24px; gap: 16px; }
+      .option-card .card-label { font-size: 16.5px; }
+      .option-card .check { width: 26px; height: 26px; }
+      .nav-btn { padding: 12px 28px; font-size: 15px; border-radius: 12px; }
+    }
+    @media (min-width: 1800px) {
+      .slide-inner { max-width: 840px; }
+      .q-title { font-size: 2rem; }
+    }
+
+    .nav-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 24px; flex-shrink: 0; position: relative; z-index: 10;
+      border-top: 1px solid #E5E7EB;
+    }
+    .nav-btn {
+      display: inline-flex; align-items: center; gap: 8px; padding: 10px 22px;
+      border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+      border: none; transition: all 0.2s; font-family: inherit;
+    }
+    .nav-btn.back { background: transparent; color: var(--text-3); }
+    .nav-btn.back:hover { color: var(--text-2); }
+    .nav-btn.next { background: var(--cyan); color: #FFFFFF; box-shadow: 0 4px 16px rgba(16,185,154,0.25); }
+    .nav-btn.next:hover { box-shadow: 0 6px 24px rgba(16,185,154,0.35); transform: translateY(-1px); }
+    .nav-btn.next:disabled { opacity: 0.3; cursor: not-allowed; transform: none; box-shadow: none; }
+    .nav-btn svg { width: 16px; height: 16px; }
+
+    .intro-slide {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 100%; text-align: center; padding: 40px 24px;
+    }
+    .intro-icon { width: 56px; height: 56px; margin-bottom: 28px; position: relative; }
+    .intro-icon svg { width: 56px; height: 56px; }
+    .intro-icon::after {
+      content: ''; position: absolute; inset: -12px; border-radius: 50%;
+      border: 1.5px solid rgba(16,185,154,0.25);
+      animation: ringPulse 3s ease-in-out infinite;
+    }
+    @keyframes ringPulse { 0%,100% { transform: scale(1); opacity: 0.5; } 50% { transform: scale(1.15); opacity: 0; } }
+    .intro-eyebrow {
+      font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--cyan); margin-bottom: 20px;
+    }
+    .intro-title {
+      font-family: "YWFT Natux", serif; font-size: clamp(1.8rem, 5vw, 2.6rem);
+      line-height: 1.15; font-weight: 400; margin-bottom: 20px;
+    }
+    .intro-desc { font-size: 15px; line-height: 1.65; color: var(--text-2); margin-bottom: 36px; max-width: 480px; }
+    .intro-trust { display: flex; justify-content: center; gap: 28px; color: var(--text-3); font-size: 13px; font-weight: 500; }
+    .intro-trust span { display: flex; align-items: center; gap: 6px; }
+    .intro-trust svg { width: 14px; height: 14px; opacity: 0.5; }
+    .start-btn {
+      display: inline-flex; align-items: center; gap: 10px; padding: 14px 36px;
+      background: var(--cyan); color: #FFFFFF; border: none; border-radius: 12px;
+      font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit;
+      transition: all 0.25s; box-shadow: 0 4px 24px rgba(16,185,154,0.25);
+      margin-bottom: 40px; position: relative; overflow: hidden;
+    }
+    .start-btn::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.25) 50%, transparent 60%);
+      transform: translateX(-100%); animation: btnShine 3s ease-in-out infinite 1s;
+    }
+    @keyframes btnShine { 0%,100% { transform: translateX(-100%); } 30% { transform: translateX(100%); } }
+    .start-btn:hover { box-shadow: 0 6px 32px rgba(16,185,154,0.35); transform: translateY(-2px); }
+    .start-btn svg { width: 18px; height: 18px; position: relative; z-index: 1; }
+    .start-btn span { position: relative; z-index: 1; }
+
+    .q-category {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--cyan); margin-bottom: 12px;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .q-category::before { content: ''; width: 3px; height: 14px; background: var(--cyan); border-radius: 2px; display: inline-block; }
+    .q-title { font-size: clamp(1.1rem, 3vw, 1.35rem); font-weight: 600; line-height: 1.4; margin-bottom: 6px; }
+    .q-desc { font-size: 14px; color: var(--text-2); margin-bottom: 24px; line-height: 1.5; }
+
+    .cards-grid { display: flex; flex-direction: column; gap: 10px; }
+    .option-card {
+      display: flex; align-items: center; gap: 14px; padding: 15px 18px;
+      background: var(--card); border: 1.5px solid var(--card-border); border-radius: var(--radius);
+      cursor: pointer; transition: all 0.2s; position: relative; user-select: none;
+      -webkit-tap-highlight-color: transparent; overflow: hidden;
+    }
+    .option-card::after {
+      content: ''; position: absolute; inset: 0; border-radius: var(--radius);
+      background: linear-gradient(105deg, transparent 30%, rgba(16,185,154,0.04) 45%, transparent 55%);
+      transform: translateX(-100%); transition: transform 0.5s; pointer-events: none;
+    }
+    .option-card:hover::after { transform: translateX(100%); }
+    .option-card:hover { background: var(--card-hover); border-color: var(--card-hover-border); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
+    .option-card.selected { background: var(--card-sel); border-color: var(--card-sel-border); box-shadow: 0 2px 12px rgba(16,185,154,0.12); }
+    .option-card.selected::after { display: none; }
+    .card-icon { font-size: 22px; flex-shrink: 0; width: 32px; text-align: center; }
+    .card-label { font-size: 14.5px; font-weight: 500; flex: 1; }
+    .check {
+      width: 22px; height: 22px; border-radius: 50%; border: 2px solid #D1D5DB;
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s;
+    }
+    .option-card.selected .check { background: var(--cyan); border-color: var(--cyan); }
+    .check svg { width: 12px; height: 12px; opacity: 0; transition: opacity 0.2s; }
+    .option-card.selected .check svg { opacity: 1; }
+
+    /* Multi-select checkboxes */
+    .multi-check {
+      width: 22px; height: 22px; border-radius: 6px; border: 2px solid #D1D5DB;
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s;
+    }
+    .option-card.selected .multi-check { background: var(--cyan); border-color: var(--cyan); }
+    .multi-check svg { width: 12px; height: 12px; opacity: 0; transition: opacity 0.2s; }
+    .option-card.selected .multi-check svg { opacity: 1; }
+
+    /* Dropdown */
+    .dropdown-wrap { position: relative; margin-bottom: 18px; }
+    .dropdown-label { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; gap: 4px; }
+    .dropdown-label .req { color: var(--coral); }
+    .dropdown-select {
+      width: 100%; padding: 12px 16px; background: var(--surface); border: 1.5px solid var(--card-border);
+      border-radius: 10px; font-size: 15px; font-family: inherit; color: var(--text);
+      appearance: none; cursor: pointer; transition: border-color 0.2s;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239CA3AF' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 12px center;
+    }
+    .dropdown-select:focus { outline: none; border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(16,185,154,0.1); }
+
+    /* Number input */
+    .input-wrap { margin-bottom: 18px; }
+    .input-label { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; gap: 4px; }
+    .input-label .req { color: var(--coral); }
+    .input-hint { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+    .input-field {
+      width: 100%; padding: 12px 16px; background: var(--surface); border: 1.5px solid var(--card-border);
+      border-radius: 10px; font-size: 15px; font-family: inherit; color: var(--text);
+      transition: border-color 0.2s;
+    }
+    .input-field:focus { outline: none; border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(16,185,154,0.1); }
+    .input-field::placeholder { color: var(--text-3); }
+
+    /* Range slider for distance */
+    .distance-row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+    .distance-mode { font-size: 14px; font-weight: 500; min-width: 140px; }
+    .distance-mode .mode-icon { font-size: 18px; margin-right: 6px; }
+    .distance-input {
+      width: 100px; padding: 10px 12px; background: var(--surface); border: 1.5px solid var(--card-border);
+      border-radius: 10px; font-size: 15px; font-family: inherit; color: var(--text); text-align: center;
+    }
+    .distance-input:focus { outline: none; border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(16,185,154,0.1); }
+    .distance-unit { font-size: 13px; color: var(--text-3); font-weight: 500; }
+
+    /* Radio pills for vehicle details */
+    .pill-group { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+    .pill {
+      padding: 9px 18px; border-radius: 100px; background: var(--surface);
+      border: 1.5px solid var(--card-border); font-size: 13.5px; font-weight: 500;
+      cursor: pointer; transition: all 0.2s; user-select: none;
+    }
+    .pill:hover { border-color: var(--card-hover-border); }
+    .pill.selected { background: var(--card-sel); border-color: var(--card-sel-border); color: var(--text); }
+
+    /* Summary table */
+    .summary-card {
+      background: var(--surface); border: 1.5px solid var(--card-border);
+      border-radius: var(--radius); overflow: hidden; margin-bottom: 20px;
+    }
+    .summary-total {
+      padding: 24px; text-align: center; background: linear-gradient(135deg, rgba(16,185,154,0.06), rgba(16,185,154,0.02));
+      border-bottom: 1px solid var(--card-border);
+    }
+    .summary-total-num {
+      font-size: clamp(2rem, 5vw, 3rem); font-weight: 700; color: var(--cyan);
+      font-family: "YWFT Natux", serif;
+    }
+    .summary-total-label { font-size: 13px; color: var(--text-2); font-weight: 500; margin-top: 4px; }
+    .summary-table { width: 100%; border-collapse: collapse; }
+    .summary-table th {
+      text-align: left; padding: 10px 16px; font-size: 11px; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3);
+      border-bottom: 1px solid var(--card-border);
+    }
+    .summary-table td { padding: 12px 16px; font-size: 14px; border-bottom: 1px solid #F3F4F6; }
+    .summary-table tr:last-child td { border-bottom: none; }
+    .summary-table .mode-col { font-weight: 500; }
+    .summary-table .num-col { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .info-box {
+      background: linear-gradient(135deg, rgba(16,185,154,0.06), rgba(16,185,154,0.02));
+      border: 1px solid rgba(16,185,154,0.15); border-radius: 10px;
+      padding: 14px 18px; font-size: 13px; line-height: 1.6; color: var(--text-2); margin-bottom: 20px;
+    }
+    .info-box strong { color: var(--text); }
+
+    /* Thank you */
+    .thanks-wrap {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 100%; text-align: center; padding: 40px 24px;
+    }
+    .thanks-icon { font-size: 56px; margin-bottom: 24px; }
+    .thanks-title {
+      font-family: "YWFT Natux", serif; font-size: clamp(1.6rem, 4vw, 2.2rem);
+      line-height: 1.2; margin-bottom: 16px;
+    }
+    .thanks-desc { font-size: 15px; color: var(--text-2); max-width: 440px; line-height: 1.6; margin-bottom: 32px; }
+    .thanks-method {
+      font-size: 12px; color: var(--text-3); max-width: 500px; line-height: 1.5;
+      padding-top: 24px; border-top: 1px solid var(--card-border);
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+<div class="ambient"><div class="orb orb-1"></div><div class="orb orb-2"></div><div class="orb orb-3"></div></div>
+<div class="grid-overlay"></div>
+
+<div id="app">
+  <div class="progress" id="progress"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+  <div class="header" id="header">
+    <div class="logo">
+      <svg viewBox="0 0 84 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M 15.12 5.933 C 11.866 10.8 6.315 14.005 0.015 14.005 L 0 14.005 L 0 4.943 L 0.015 4.943 C 3.162 4.943 5.933 3.344 7.562 0.916 Z M 15.12 22.067 C 11.866 17.201 6.315 13.995 0.015 13.995 L 0 13.995 L 0 23.057 L 0.015 23.057 C 3.162 23.057 5.933 24.656 7.562 27.084 Z" fill="#10B99A"/>
+        <path d="M 82.542 8.183 C 83.306 8.183 83.928 7.564 83.928 6.801 C 83.928 6.037 83.306 5.416 82.542 5.416 C 81.778 5.416 81.157 6.037 81.157 6.801 C 81.157 7.564 81.778 8.183 82.542 8.183 Z M 82.542 7.888 C 81.941 7.888 81.453 7.401 81.453 6.801 C 81.453 6.2 81.941 5.711 82.542 5.711 C 83.143 5.711 83.633 6.2 83.633 6.801 C 83.633 7.401 83.143 7.888 82.542 7.888 Z M 82.05 7.469 L 82.302 7.469 L 82.302 6.888 L 82.535 6.888 C 82.714 6.888 82.78 6.933 82.79 7.068 L 82.818 7.468 L 83.08 7.468 L 83.054 7.103 C 83.043 6.958 82.998 6.872 82.787 6.831 L 82.787 6.803 C 82.997 6.763 83.089 6.645 83.089 6.479 C 83.089 6.246 82.911 6.13 82.696 6.13 L 82.051 6.13 L 82.051 7.468 L 82.05 7.468 Z M 82.62 6.683 L 82.301 6.683 L 82.301 6.334 L 82.62 6.336 C 82.744 6.336 82.822 6.391 82.822 6.507 C 82.822 6.624 82.736 6.683 82.62 6.683 Z M 47.458 21.731 L 44.999 21.731 L 44.999 19.292 L 44.664 19.292 C 44.279 20.865 42.866 21.979 41.031 21.979 C 38.699 21.979 36.753 20.196 36.753 17.645 C 36.753 15.094 38.724 13.299 41.056 13.299 C 42.879 13.299 44.169 14.401 44.614 15.912 L 44.999 15.912 L 44.999 13.819 C 44.999 12.098 44.019 11.305 42.643 11.305 L 37.423 11.305 L 37.423 9.052 L 42.655 9.052 C 45.557 9.052 47.466 10.922 47.466 13.844 L 47.466 19.515 L 47.458 21.732 Z M 44.738 17.546 C 44.738 16.252 43.188 15.44 41.799 15.44 C 40.411 15.44 39.356 16.344 39.356 17.607 C 39.356 18.869 40.31 19.848 41.848 19.848 C 43.262 19.848 44.737 19.032 44.737 17.546 Z M 49.798 11.33 L 49.798 21.731 L 52.179 21.731 L 52.179 13.831 C 52.179 12.271 51.633 11.751 50.839 11.503 L 50.839 11.132 L 56.692 11.132 L 56.692 9.051 L 51.757 9.051 C 50.306 9.051 49.798 9.93 49.798 11.33 Z M 62.87 22.016 C 64.953 22.016 66.491 20.827 66.887 18.834 L 67.272 18.834 L 67.272 21.732 L 69.603 21.732 L 69.603 5.417 L 67.272 5.417 L 67.272 12.11 L 66.887 12.11 C 66.527 10.278 65.077 8.928 62.795 8.928 C 59.732 8.928 57.215 11.268 57.215 15.454 C 57.215 19.849 59.98 22.016 62.87 22.016 Z M 63.576 19.724 C 61.096 19.724 59.807 17.669 59.807 15.366 C 59.807 13.062 61.121 11.156 63.502 11.156 C 65.882 11.156 67.271 13.162 67.271 15.502 C 67.271 17.841 65.858 19.724 63.576 19.724 Z M 29.836 22.016 C 27.752 22.016 26.215 20.827 25.818 18.834 L 25.434 18.834 L 25.434 21.732 L 23.102 21.732 L 23.102 5.417 L 25.434 5.417 L 25.434 12.11 L 25.818 12.11 C 26.178 10.278 27.628 8.928 29.91 8.928 C 32.973 8.928 35.49 11.268 35.49 15.454 C 35.49 19.849 32.725 22.016 29.836 22.016 Z M 29.129 19.724 C 31.609 19.724 32.898 17.669 32.898 15.366 C 32.898 13.062 31.584 11.156 29.203 11.156 C 26.823 11.156 25.434 13.162 25.434 15.502 C 25.434 17.841 26.847 19.724 29.129 19.724 Z M 77.554 21.855 C 81.175 21.855 83.927 19.329 83.927 15.453 C 83.927 11.577 81.175 8.878 77.554 8.878 C 73.933 8.878 71.18 11.59 71.18 15.453 C 71.18 19.315 73.933 21.855 77.554 21.855 Z M 77.554 19.576 C 75.309 19.576 73.759 17.967 73.759 15.453 C 73.759 12.939 75.308 11.156 77.554 11.156 C 79.799 11.156 81.335 12.964 81.335 15.453 C 81.335 17.941 79.786 19.576 77.554 19.576 Z" fill="#10B99A"/>
+      </svg>
+    </div>
+    <span class="method-label">GHG Protocol · Scope 3 · Kat. 7</span>
+    <span class="step-label" id="stepLabel"></span>
+  </div>
+
+  <div class="viewport" id="viewport"></div>
+
+  <div class="nav-bar" id="navBar">
+    <button class="nav-btn back" id="backBtn" onclick="goBack()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      Tillbaka
+    </button>
+    <button class="nav-btn next" id="nextBtn" onclick="goNext()" disabled>
+      <span id="nextLabel">Nästa</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+    </button>
+  </div>
+</div>
+
+<script>
+const OFFICES = [
+  'Stockholm','Göteborg','Malmö','Eskilstuna','Falun','Gävle','Helsingborg',
+  'Jönköping','Karlstad','Kiruna','Kristianstad','Linköping','Luleå',
+  'Norrköping','Nyköping','Sundsvall','Umeå','Uppsala','Visby','Västerås','Örebro','Östersund'
+];
+const DEPARTMENTS = ['Revision','BCS','Skatt','Advisory','Corporate functions'];
+const TRANSPORT_MODES = [
+  {id:'car',    icon:'🚗', label:'Bil'},
+  {id:'bus',    icon:'🚌', label:'Buss'},
+  {id:'train',  icon:'🚆', label:'Tåg / Pendeltåg'},
+  {id:'metro',  icon:'🚇', label:'Tunnelbana / Spårvagn'},
+  {id:'bike',   icon:'🚲', label:'Cykel'},
+  {id:'ebike',  icon:'⚡', label:'Elcykel / Elsparkcykel'},
+  {id:'walk',   icon:'🚶', label:'Gång'},
+  {id:'mc',     icon:'🏍️', label:'MC / Moped'},
+  {id:'ferry',  icon:'⛴️', label:'Färja'}
+];
+const FUEL_TYPES = ['Bensin','Diesel','Hybrid (HEV)','Laddhybrid (PHEV)','Elbil (BEV)','Biogas / CNG','E85 / Etanol'];
+const CAR_SIZES = [
+  {v:'small', l:'Liten (t.ex. VW Polo)'},
+  {v:'medium', l:'Mellanstor (t.ex. Volvo V60)'},
+  {v:'large', l:'Stor (t.ex. Volvo XC90)'}
+];
+const CARPOOL_OPTS = [
+  {v:'1', l:'Nej, kör ensam'},
+  {v:'2', l:'Ja, 2 personer totalt'},
+  {v:'3', l:'Ja, 3 personer totalt'},
+  {v:'4', l:'Ja, 4+ personer totalt'}
+];
+
+// Emission factors (kg CO2e per passenger-km), Naturvårdsverket / DEFRA 2024
+const EF = {
+  car: { Bensin: {small:0.14, medium:0.17, large:0.21}, Diesel: {small:0.12, medium:0.15, large:0.19},
+    'Hybrid (HEV)': {small:0.10, medium:0.12, large:0.15}, 'Laddhybrid (PHEV)': {small:0.06, medium:0.08, large:0.10},
+    'Elbil (BEV)': {small:0.02, medium:0.02, large:0.03}, 'Biogas / CNG': {small:0.06, medium:0.08, large:0.10},
+    'E85 / Etanol': {small:0.10, medium:0.12, large:0.15} },
+  bus: 0.068, train: 0.006, metro: 0.004, bike: 0, ebike: 0.005, walk: 0,
+  mc: { Bensin: 0.11, El: 0.02 }, ferry: 0.19
+};
+
+const SHEETS_URL = '%%GOOGLE_SHEETS_URL%%';
+
+let answers = {};
+let cur = 0;
+const TOTAL_STEPS = 5; // intro, office, transport, vehicle, summary
+
+function el(id) { return document.getElementById(id); }
+
+function updateProgress() {
+  const pct = cur === 0 ? 0 : Math.round((cur / (TOTAL_STEPS - 1)) * 100);
+  el('progressFill').style.width = pct + '%';
+  el('progress').classList.toggle('visible', cur > 0);
+  el('header').classList.toggle('visible', cur > 0);
+  el('stepLabel').textContent = cur > 0 && cur < TOTAL_STEPS - 1 ? `Steg ${cur} av ${TOTAL_STEPS - 2}` : '';
+  el('navBar').style.display = cur === 0 || cur >= TOTAL_STEPS ? 'none' : 'flex';
+  el('backBtn').style.visibility = cur <= 1 ? 'hidden' : 'visible';
+}
+
+function updateNext() {
+  const btn = el('nextBtn');
+  const label = el('nextLabel');
+  if (cur === TOTAL_STEPS - 1) {
+    label.textContent = '✓ Skicka in';
+    btn.disabled = false;
+    return;
+  }
+  let ok = false;
+  if (cur === 1) ok = !!answers.office && !!answers.commute_days;
+  else if (cur === 2) ok = (answers.transport_modes || []).length > 0;
+  else if (cur === 3) ok = true;
+  else ok = true;
+  label.textContent = 'Nästa';
+  btn.disabled = !ok;
+}
+
+function render() {
+  const vp = el('viewport');
+  const existing = vp.querySelector('.slide.active');
+  if (existing) {
+    existing.classList.remove('active');
+    existing.classList.add('exit-left');
+    setTimeout(() => existing.remove(), 400);
+  }
+
+  const slide = document.createElement('div');
+  slide.className = 'slide enter-right';
+  const inner = document.createElement('div');
+  inner.className = 'slide-inner';
+
+  if (cur === 0) renderIntro(inner);
+  else if (cur === 1) renderOffice(inner);
+  else if (cur === 2) renderTransport(inner);
+  else if (cur === 3) renderVehicle(inner);
+  else if (cur === 4) renderSummary(inner);
+  else renderThankYou(inner);
+
+  slide.appendChild(inner);
+  vp.appendChild(slide);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      slide.classList.remove('enter-right');
+      slide.classList.add('active');
+    });
+  });
+  updateProgress();
+  updateNext();
+}
+
+function goBack() {
+  if (cur <= 0) return;
+  const vp = el('viewport');
+  const existing = vp.querySelector('.slide.active');
+  if (existing) {
+    existing.classList.remove('active');
+    existing.classList.add('exit-right');
+    setTimeout(() => existing.remove(), 400);
+  }
+  cur--;
+  // Skip vehicle step if no car/mc selected
+  if (cur === 3 && !needsVehicleDetails()) cur--;
+  const slide = document.createElement('div');
+  slide.className = 'slide enter-left';
+  const inner = document.createElement('div');
+  inner.className = 'slide-inner';
+
+  if (cur === 0) renderIntro(inner);
+  else if (cur === 1) renderOffice(inner);
+  else if (cur === 2) renderTransport(inner);
+  else if (cur === 3) renderVehicle(inner);
+  else if (cur === 4) renderSummary(inner);
+
+  slide.appendChild(inner);
+  vp.appendChild(slide);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      slide.classList.remove('enter-left');
+      slide.classList.add('active');
+    });
+  });
+  updateProgress();
+  updateNext();
+}
+
+function goNext() {
+  if (cur === TOTAL_STEPS - 1) { submitAndFinish(); return; }
+  cur++;
+  if (cur === 3 && !needsVehicleDetails()) cur++;
+  render();
+}
+
+function needsVehicleDetails() {
+  const modes = answers.transport_modes || [];
+  return modes.includes('car') || modes.includes('mc');
+}
+
+/* ═══ INTRO ═══ */
+function renderIntro(c) {
+  c.innerHTML = `
+    <div class="intro-slide">
+      <div class="intro-icon">
+        <svg viewBox="0 0 56 56" fill="none">
+          <circle cx="28" cy="28" r="26" stroke="var(--cyan)" stroke-width="1.5" opacity="0.3"/>
+          <text x="28" y="36" text-anchor="middle" font-size="28">🚲</text>
+        </svg>
+      </div>
+      <div class="intro-eyebrow">GHG Protocol · Scope 3 · Kategori 7</div>
+      <h1 class="intro-title">Pendlingsenkät</h1>
+      <p class="intro-desc">Hjälp oss kartlägga pendlingsrelaterade utsläpp. Svaren används för att beräkna Scope 3-utsläpp enligt GHG-protokollets distance-based method. Tar ca 3 minuter.</p>
+      <button class="start-btn" onclick="cur=1; render();">
+        <span>Starta enkäten</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+      <div class="intro-trust">
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Anonymt</span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> ~3 min</span>
+      </div>
+    </div>`;
+}
+
+/* ═══ STEP 1: OFFICE ═══ */
+function renderOffice(c) {
+  c.innerHTML = `
+    <div class="q-category">Kontor & bakgrund</div>
+    <h2 class="q-title">Var jobbar du och hur ser din pendling ut?</h2>
+    <p class="q-desc">Välj ditt primära kontor och ange grunduppgifter om dina arbetsdagar.</p>
+
+    <div class="dropdown-wrap">
+      <label class="dropdown-label">Kontor <span class="req">*</span></label>
+      <select class="dropdown-select" id="officeSelect" onchange="answers.office=this.value; updateNext();">
+        <option value="">Välj kontor...</option>
+        ${OFFICES.map(o => `<option value="${o}" ${answers.office===o?'selected':''}>${o}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="dropdown-wrap">
+      <label class="dropdown-label">Avdelning</label>
+      <select class="dropdown-select" id="deptSelect" onchange="answers.department=this.value;">
+        <option value="">Välj avdelning...</option>
+        ${DEPARTMENTS.map(d => `<option value="${d}" ${answers.department===d?'selected':''}>${d}</option>`).join('')}
+      </select>
+    </div>
+
+    <div class="input-wrap">
+      <label class="input-label">Anställningsgrad (%)</label>
+      <input type="number" class="input-field" placeholder="100" min="10" max="100" value="${answers.employment_pct||''}"
+        oninput="answers.employment_pct=this.value;">
+    </div>
+
+    <div class="dropdown-wrap">
+      <label class="dropdown-label">Pendlingsdagar per vecka <span class="req">*</span></label>
+      <select class="dropdown-select" id="daysSelect" onchange="answers.commute_days=this.value; updateNext();">
+        <option value="">Välj...</option>
+        ${[1,2,3,4,5].map(d => `<option value="${d}" ${answers.commute_days==d?'selected':''}>${d} dag${d>1?'ar':''}</option>`).join('')}
+      </select>
+      <div class="input-hint">Dagar du fysiskt åker till kontoret</div>
+    </div>
+
+    <div class="input-wrap">
+      <label class="input-label">Arbetsveckor per år</label>
+      <input type="number" class="input-field" placeholder="47" min="20" max="52" value="${answers.work_weeks||''}"
+        oninput="answers.work_weeks=this.value;">
+      <div class="input-hint">Typiskt 46\u201348 (exkl. semester)</div>
+    </div>`;
+}
+
+/* ═══ STEP 2: TRANSPORT ═══ */
+function renderTransport(c) {
+  const modes = answers.transport_modes || [];
+  c.innerHTML = `
+    <div class="q-category">Transportmedel</div>
+    <h2 class="q-title">Hur tar du dig till jobbet?</h2>
+    <p class="q-desc">Välj alla transportmedel du använder. Du kan välja flera om du kombinerar (t.ex. bil + tåg).</p>
+    <div class="cards-grid" id="transportGrid">
+      ${TRANSPORT_MODES.map(m => `
+        <div class="option-card ${modes.includes(m.id)?'selected':''}" data-id="${m.id}" onclick="toggleTransport('${m.id}', this)">
+          <span class="card-icon">${m.icon}</span>
+          <span class="card-label">${m.label}</span>
+          <span class="multi-check"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+        </div>
+      `).join('')}
+    </div>
+    <div id="distanceFields" style="margin-top:24px;"></div>`;
+  renderDistanceFields();
+}
+
+function toggleTransport(id, el) {
+  let modes = answers.transport_modes || [];
+  if (modes.includes(id)) modes = modes.filter(m => m !== id);
+  else modes.push(id);
+  answers.transport_modes = modes;
+  el.classList.toggle('selected');
+  renderDistanceFields();
+  updateNext();
+}
+
+function renderDistanceFields() {
+  const modes = answers.transport_modes || [];
+  const container = document.getElementById('distanceFields');
+  if (!container) return;
+  if (modes.length === 0) { container.innerHTML = ''; return; }
+  if (!answers.distances) answers.distances = {};
+  container.innerHTML = `
+    <div class="q-desc" style="margin-bottom:16px; font-weight:500; color:var(--text);">Enkel sträcka per transportmedel (km)</div>
+    ${modes.map(id => {
+      const m = TRANSPORT_MODES.find(t => t.id === id);
+      return `<div class="distance-row">
+        <span class="distance-mode"><span class="mode-icon">${m.icon}</span> ${m.label}</span>
+        <input type="number" class="distance-input" placeholder="0" min="0" step="0.5"
+          value="${answers.distances[id]||''}"
+          oninput="answers.distances['${id}']=parseFloat(this.value)||0;">
+        <span class="distance-unit">km</span>
+      </div>`;
+    }).join('')}`;
+}
+
+/* ═══ STEP 3: VEHICLE DETAILS ═══ */
+function renderVehicle(c) {
+  const modes = answers.transport_modes || [];
+  const hasCar = modes.includes('car');
+  const hasMC = modes.includes('mc');
+
+  let html = `
+    <div class="q-category">Fordonsdetaljer</div>
+    <h2 class="q-title">Berätta mer om ditt fordon</h2>
+    <p class="q-desc">Kompletterande information om motorfordon. Behövs för korrekta emissionsfaktorer.</p>`;
+
+  if (hasCar) {
+    html += `
+      <div class="dropdown-label" style="margin-bottom:12px;">Drivmedel <span class="req">*</span></div>
+      <div class="pill-group" id="fuelGroup">
+        ${FUEL_TYPES.map(f => `<span class="pill ${answers.car_fuel===f?'selected':''}" onclick="selectPill('car_fuel','${f}',this,'fuelGroup')">${f}</span>`).join('')}
+      </div>
+
+      <div class="dropdown-label" style="margin-bottom:12px;">Bilstorlek</div>
+      <div class="pill-group" id="sizeGroup">
+        ${CAR_SIZES.map(s => `<span class="pill ${answers.car_size===s.v?'selected':''}" onclick="selectPill('car_size','${s.v}',this,'sizeGroup')">${s.l}</span>`).join('')}
+      </div>
+
+      <div class="dropdown-wrap">
+        <label class="dropdown-label">Samåker du? <span class="req">*</span></label>
+        <select class="dropdown-select" onchange="answers.carpool=this.value;">
+          ${CARPOOL_OPTS.map(o => `<option value="${o.v}" ${answers.carpool===o.v?'selected':''}>${o.l}</option>`).join('')}
+        </select>
+      </div>
+
+      <div class="input-wrap">
+        <label class="input-label">Andel samåkningsdagar (%)</label>
+        <input type="number" class="input-field" placeholder="0" min="0" max="100" value="${answers.carpool_pct||''}"
+          oninput="answers.carpool_pct=this.value;">
+        <div class="input-hint">Hur ofta av dina bildagar</div>
+      </div>`;
+  }
+
+  if (hasMC) {
+    html += `
+      <div class="dropdown-label" style="margin-top:24px; margin-bottom:12px;">MC/Moped \u2013 drivmedel</div>
+      <div class="pill-group" id="mcFuelGroup">
+        <span class="pill ${answers.mc_fuel==='Bensin'?'selected':''}" onclick="selectPill('mc_fuel','Bensin',this,'mcFuelGroup')">Bensin</span>
+        <span class="pill ${answers.mc_fuel==='El'?'selected':''}" onclick="selectPill('mc_fuel','El',this,'mcFuelGroup')">El</span>
+      </div>`;
+  }
+
+  html += `
+    <div class="info-box" style="margin-top:24px;">
+      <strong>Varför frågar vi om drivmedel och samåkning?</strong><br>
+      GHG-protokollet kräver att utsläpp beräknas per passagerare-kilometer och transportmedel.
+      Samåkning minskar per-capita-utsläppen proportionellt.
+    </div>`;
+
+  c.innerHTML = html;
+}
+
+function selectPill(key, val, elem, groupId) {
+  answers[key] = val;
+  document.querySelectorAll(`#${groupId} .pill`).forEach(p => p.classList.remove('selected'));
+  elem.classList.add('selected');
+}
+
+/* ═══ STEP 4: SUMMARY ═══ */
+function renderSummary(c) {
+  const modes = answers.transport_modes || [];
+  const days = parseInt(answers.commute_days) || 0;
+  const weeks = parseInt(answers.work_weeks) || 47;
+  const distances = answers.distances || {};
+  const carpoolPersons = parseInt(answers.carpool) || 1;
+  const carpoolPct = parseInt(answers.carpool_pct) || 0;
+
+  let totalCO2 = 0;
+  const rows = [];
+
+  modes.forEach(id => {
+    const km = distances[id] || 0;
+    if (km <= 0) return;
+    let ef = 0;
+    const m = TRANSPORT_MODES.find(t => t.id === id);
+
+    if (id === 'car') {
+      const fuel = answers.car_fuel || 'Bensin';
+      const size = answers.car_size || 'medium';
+      ef = (EF.car[fuel] && EF.car[fuel][size]) || 0.17;
+      const soloFraction = 1 - (carpoolPct / 100);
+      const poolFraction = carpoolPct / 100;
+      const effectiveEF = ef * (soloFraction + poolFraction / carpoolPersons);
+      ef = effectiveEF;
+    } else if (id === 'mc') {
+      ef = EF.mc[answers.mc_fuel || 'Bensin'] || 0.11;
+    } else {
+      ef = EF[id] || 0;
+    }
+
+    const annual = km * 2 * days * weeks * ef;
+    totalCO2 += annual;
+    rows.push({ icon: m.icon, label: m.label, km, days, co2: annual });
+  });
+
+  c.innerHTML = `
+    <div class="q-category">Sammanfattning</div>
+    <h2 class="q-title">Granska dina svar</h2>
+    <p class="q-desc">Utsläppen beräknas enligt GHG Protocol distance-based method.</p>
+
+    <div class="summary-card">
+      <div class="summary-total">
+        <div class="summary-total-num">${Math.round(totalCO2)}</div>
+        <div class="summary-total-label">kg CO\u2082e / år (uppskattning)</div>
+      </div>
+      ${rows.length > 0 ? `
+      <table class="summary-table">
+        <thead><tr><th>Transportmedel</th><th>Enkel sträcka</th><th>Dagar/v</th><th style="text-align:right">kg CO\u2082e/år</th></tr></thead>
+        <tbody>
+          ${rows.map(r => `<tr>
+            <td class="mode-col">${r.icon} ${r.label}</td>
+            <td>${r.km} km</td>
+            <td>${r.days}</td>
+            <td class="num-col">${Math.round(r.co2)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : '<p style="padding:20px; text-align:center; color:var(--text-3);">Inga transportmedel med sträcka angivna.</p>'}
+    </div>
+
+    <div class="info-box">
+      <strong>Beräkningsmetod:</strong> CO\u2082e = sträcka (km) \u00d7 2 (tur/retur) \u00d7 dagar/vecka \u00d7 veckor/år \u00d7 emissionsfaktor (kg CO\u2082e/pkm).
+      Emissionsfaktorer baserade på svenska genomsnittsvärden (Naturvårdsverket / DEFRA 2024).
+      Samåkning justerar bilutsläpp med 1/antal passagerare.
+    </div>`;
+}
+
+/* ═══ SUBMIT ═══ */
+async function submitAndFinish() {
+  const btn = el('nextBtn');
+  btn.disabled = true;
+  el('nextLabel').textContent = 'Skickar...';
+
+  const modes = answers.transport_modes || [];
+  const days = parseInt(answers.commute_days) || 0;
+  const weeks = parseInt(answers.work_weeks) || 47;
+  const distances = answers.distances || {};
+
+  let totalCO2 = 0;
+  const modeDetails = [];
+  modes.forEach(id => {
+    const km = distances[id] || 0;
+    let ef = 0;
+    if (id === 'car') {
+      const fuel = answers.car_fuel || 'Bensin';
+      const size = answers.car_size || 'medium';
+      ef = (EF.car[fuel] && EF.car[fuel][size]) || 0.17;
+      const carpoolPersons = parseInt(answers.carpool) || 1;
+      const carpoolPct = parseInt(answers.carpool_pct) || 0;
+      const soloFraction = 1 - (carpoolPct / 100);
+      const poolFraction = carpoolPct / 100;
+      ef = ef * (soloFraction + poolFraction / carpoolPersons);
+    } else if (id === 'mc') {
+      ef = EF.mc[answers.mc_fuel || 'Bensin'] || 0.11;
+    } else {
+      ef = EF[id] || 0;
+    }
+    const annual = km * 2 * days * weeks * ef;
+    totalCO2 += annual;
+    modeDetails.push(`${id}:${km}km:${Math.round(annual)}kg`);
+  });
+
+  const payload = {
+    timestamp: new Date().toISOString(),
+    office: answers.office || '',
+    department: answers.department || '',
+    employment_pct: answers.employment_pct || '100',
+    commute_days: answers.commute_days || '',
+    work_weeks: answers.work_weeks || '47',
+    transport_modes: modes.join(', '),
+    distances_km: modes.map(id => `${id}:${distances[id]||0}`).join(', '),
+    car_fuel: answers.car_fuel || '',
+    car_size: answers.car_size || '',
+    carpool: answers.carpool || '1',
+    carpool_pct: answers.carpool_pct || '0',
+    mc_fuel: answers.mc_fuel || '',
+    mode_details: modeDetails.join(', '),
+    total_co2e_kg: Math.round(totalCO2),
+  };
+
+  try {
+    if (SHEETS_URL && SHEETS_URL !== '%%GOOGLE_SHEETS_URL%%') {
+      await fetch(SHEETS_URL, {
+        method: 'POST', mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
+  } catch (e) {
+    console.warn('Sheet submission error:', e);
+  }
+
+  cur = TOTAL_STEPS;
+  render();
+}
+
+/* ═══ THANK YOU ═══ */
+function renderThankYou(c) {
+  c.innerHTML = `
+    <div class="thanks-wrap">
+      <div class="thanks-icon">✅</div>
+      <h1 class="thanks-title">Tack för ditt svar!</h1>
+      <p class="thanks-desc">Din pendlingsdata har registrerats och kommer att inkluderas i klimatberäkningen enligt GHG Protocol Scope 3 Kategori 7.</p>
+      <button class="start-btn" onclick="answers={}; cur=0; render();">
+        <span>Skicka in nytt svar</span>
+      </button>
+      <p class="thanks-method">
+        Metodik enligt GHG Protocol \u2013 Technical Guidance, Chapter 7: Employee Commuting.<br>
+        Distance-based method · Scope 3 Kategori 7 · Emissionsfaktorer: Naturvårdsverket / DEFRA 2024
+      </p>
+    </div>`;
+  el('navBar').style.display = 'none';
+}
+
+// Init
+render();
+</script>
+</body>
+</html>
