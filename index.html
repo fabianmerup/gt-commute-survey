@@ -873,11 +873,8 @@ async function submitAndFinish() {
   };
 
   if (SHEETS_URL && SHEETS_URL !== '%%GOOGLE_SHEETS_URL%%') {
-    fetch(SHEETS_URL, {
-      method: 'POST', mode: 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }).catch(e => console.warn('Sheet submission error:', e));
+    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+    navigator.sendBeacon(SHEETS_URL, blob);
   }
 
   cur = TOTAL_STEPS;
