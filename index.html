@@ -245,15 +245,22 @@
     .input-field:focus { outline: none; border-color: var(--purple); box-shadow: 0 0 0 3px rgba(88,44,131,0.1); }
     .input-field::placeholder { color: var(--text-3); }
 
-    .distance-row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
-    .distance-mode { font-size: 14px; font-weight: 500; min-width: 140px; }
-    .distance-mode .mode-icon { font-size: 18px; margin-right: 6px; }
-    .distance-input {
-      width: 100px; padding: 10px 12px; background: var(--surface); border: 1.5px solid var(--card-border);
+    .mode-detail-card {
+      background: var(--card-flat); border: 1.5px solid var(--card-border);
+      border-radius: var(--radius); padding: 20px; margin-bottom: 14px;
+    }
+    .mode-detail-header { font-size: 15px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .mode-detail-header .mode-emoji { font-size: 20px; }
+    .mode-detail-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    @media (max-width: 500px) { .mode-detail-fields { grid-template-columns: 1fr; } }
+    .mode-field label { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 6px; display: flex; align-items: center; gap: 3px; }
+    .mode-field label .req { color: var(--purple); }
+    .mode-field input {
+      width: 100%; padding: 10px 12px; background: var(--surface); border: 1.5px solid var(--card-border);
       border-radius: 10px; font-size: 15px; font-family: inherit; color: var(--text); text-align: center;
     }
-    .distance-input:focus { outline: none; border-color: var(--purple); box-shadow: 0 0 0 3px rgba(88,44,131,0.1); }
-    .distance-unit { font-size: 13px; color: var(--text-3); font-weight: 500; }
+    .mode-field input:focus { outline: none; border-color: var(--purple); box-shadow: 0 0 0 3px rgba(88,44,131,0.1); }
+    .mode-field .field-hint { font-size: 11px; color: var(--text-3); margin-top: 4px; }
 
     .pill-group { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
     .pill {
@@ -401,7 +408,8 @@ const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwhfq-1XT_WcIdPCrQK-
 
 let answers = {};
 let cur = 0;
-const TOTAL_STEPS = 5;
+// 0=intro, 1=office, 2=select modes, 3=per-mode details, 4=vehicle details, 5=summary, 6=thanks
+const TOTAL_STEPS = 6;
 
 function el(id) { return document.getElementById(id); }
 
@@ -410,7 +418,8 @@ function updateProgress() {
   el('progressFill').style.width = pct + '%';
   el('progress').classList.toggle('visible', cur > 0);
   el('header').classList.toggle('visible', cur > 0);
-  el('stepLabel').textContent = cur > 0 && cur < TOTAL_STEPS - 1 ? `Steg ${cur} av ${TOTAL_STEPS - 2}` : '';
+  const lastContent = TOTAL_STEPS - 1;
+  el('stepLabel').textContent = cur > 0 && cur < lastContent ? `Steg ${cur} av ${lastContent - 1}` : '';
   el('navBar').style.display = cur === 0 || cur >= TOTAL_STEPS ? 'none' : 'flex';
   el('backBtn').style.visibility = cur <= 1 ? 'hidden' : 'visible';
 }
@@ -419,45 +428,48 @@ function updateNext() {
   const btn = el('nextBtn');
   const label = el('nextLabel');
   if (cur === TOTAL_STEPS - 1) {
-    label.textContent = '✓ Skicka in';
+    label.textContent = '\u2713 Skicka in';
     btn.disabled = false;
     return;
   }
   let ok = false;
   if (cur === 1) ok = !!answers.office && !!answers.commute_days;
   else if (cur === 2) ok = (answers.transport_modes || []).length > 0;
-  else if (cur === 3) ok = true;
+  else if (cur === 3) {
+    const md = answers.mode_data || {};
+    ok = (answers.transport_modes || []).some(id => md[id] && md[id].km > 0);
+  }
   else ok = true;
   label.textContent = 'Nästa';
   btn.disabled = !ok;
 }
 
-function render() {
+function renderSlide(dir) {
   const vp = el('viewport');
   const existing = vp.querySelector('.slide.active');
   if (existing) {
     existing.classList.remove('active');
-    existing.classList.add('exit-left');
+    existing.classList.add(dir === 'forward' ? 'exit-left' : 'exit-right');
     setTimeout(() => existing.remove(), 400);
   }
-
   const slide = document.createElement('div');
-  slide.className = 'slide enter-right';
+  slide.className = 'slide ' + (dir === 'forward' ? 'enter-right' : 'enter-left');
   const inner = document.createElement('div');
   inner.className = 'slide-inner';
 
   if (cur === 0) renderIntro(inner);
   else if (cur === 1) renderOffice(inner);
   else if (cur === 2) renderTransport(inner);
-  else if (cur === 3) renderVehicle(inner);
-  else if (cur === 4) renderSummary(inner);
+  else if (cur === 3) renderModeDetails(inner);
+  else if (cur === 4) renderVehicle(inner);
+  else if (cur === 5) renderSummary(inner);
   else renderThankYou(inner);
 
   slide.appendChild(inner);
   vp.appendChild(slide);
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      slide.classList.remove('enter-right');
+      slide.classList.remove('enter-right', 'enter-left');
       slide.classList.add('active');
     });
   });
@@ -465,45 +477,20 @@ function render() {
   updateNext();
 }
 
+function render() { renderSlide('forward'); }
+
 function goBack() {
   if (cur <= 0) return;
-  const vp = el('viewport');
-  const existing = vp.querySelector('.slide.active');
-  if (existing) {
-    existing.classList.remove('active');
-    existing.classList.add('exit-right');
-    setTimeout(() => existing.remove(), 400);
-  }
   cur--;
-  if (cur === 3 && !needsVehicleDetails()) cur--;
-  const slide = document.createElement('div');
-  slide.className = 'slide enter-left';
-  const inner = document.createElement('div');
-  inner.className = 'slide-inner';
-
-  if (cur === 0) renderIntro(inner);
-  else if (cur === 1) renderOffice(inner);
-  else if (cur === 2) renderTransport(inner);
-  else if (cur === 3) renderVehicle(inner);
-  else if (cur === 4) renderSummary(inner);
-
-  slide.appendChild(inner);
-  vp.appendChild(slide);
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      slide.classList.remove('enter-left');
-      slide.classList.add('active');
-    });
-  });
-  updateProgress();
-  updateNext();
+  if (cur === 4 && !needsVehicleDetails()) cur--;
+  renderSlide('back');
 }
 
 function goNext() {
   if (cur === TOTAL_STEPS - 1) { submitAndFinish(); return; }
   cur++;
-  if (cur === 3 && !needsVehicleDetails()) cur++;
-  render();
+  if (cur === 4 && !needsVehicleDetails()) cur++;
+  renderSlide('forward');
 }
 
 function needsVehicleDetails() {
@@ -606,39 +593,61 @@ function renderTransport(c) {
           <span class="multi-check"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
         </div>
       `).join('')}
-    </div>
-    <div id="distanceFields" style="margin-top:24px;"></div>`;
-  renderDistanceFields();
+    </div>`;
 }
 
-function toggleTransport(id, el) {
+function toggleTransport(id, elem) {
   let modes = answers.transport_modes || [];
   if (modes.includes(id)) modes = modes.filter(m => m !== id);
   else modes.push(id);
   answers.transport_modes = modes;
-  el.classList.toggle('selected');
-  renderDistanceFields();
+  elem.classList.toggle('selected');
   updateNext();
 }
 
-function renderDistanceFields() {
+function renderModeDetails(c) {
   const modes = answers.transport_modes || [];
-  const container = document.getElementById('distanceFields');
-  if (!container) return;
-  if (modes.length === 0) { container.innerHTML = ''; return; }
-  if (!answers.distances) answers.distances = {};
-  container.innerHTML = `
-    <div class="q-desc" style="margin-bottom:16px; font-weight:500; color:var(--text);">Enkel sträcka per transportmedel (km)</div>
+  if (!answers.mode_data) answers.mode_data = {};
+  const defaultDays = parseInt(answers.commute_days) || 3;
+  const singleMode = modes.length === 1;
+
+  c.innerHTML = `
+    <div class="q-category">Sträckor & fördelning</div>
+    <h2 class="q-title">Beskriv din pendling per transportmedel</h2>
+    <p class="q-desc">Ange enkel sträcka (hem \u2192 kontor), hur många dagar/vecka du använder varje medel, och hur stor andel av resan det utgör.</p>
     ${modes.map(id => {
       const m = TRANSPORT_MODES.find(t => t.id === id);
-      return `<div class="distance-row">
-        <span class="distance-mode"><span class="mode-icon">${m.icon}</span> ${m.label}</span>
-        <input type="number" class="distance-input" placeholder="0" min="0" step="0.5"
-          value="${answers.distances[id]||''}"
-          oninput="answers.distances['${id}']=parseFloat(this.value)||0;">
-        <span class="distance-unit">km</span>
+      const d = answers.mode_data[id] || { km: '', days: defaultDays, share: singleMode ? 100 : '' };
+      if (!answers.mode_data[id]) answers.mode_data[id] = d;
+      return `<div class="mode-detail-card">
+        <div class="mode-detail-header"><span class="mode-emoji">${m.icon}</span> ${m.label}</div>
+        <div class="mode-detail-fields">
+          <div class="mode-field">
+            <label>Enkel sträcka (km) <span class="req">*</span></label>
+            <input type="number" placeholder="t.ex. 15" min="0" step="0.5"
+              value="${d.km||''}"
+              oninput="answers.mode_data['${id}'].km=parseFloat(this.value)||0; updateNext();">
+            <div class="field-hint">En väg, hem \u2192 kontor</div>
+          </div>
+          <div class="mode-field">
+            <label>Dagar/vecka med detta medel</label>
+            <input type="number" placeholder="${defaultDays}" min="0" max="7" step="1"
+              value="${d.days||''}"
+              oninput="answers.mode_data['${id}'].days=parseFloat(this.value)||0;">
+          </div>
+          <div class="mode-field">
+            <label>Andel av sträckan (%)</label>
+            <input type="number" placeholder="100" min="0" max="100" step="5"
+              value="${d.share||''}"
+              oninput="answers.mode_data['${id}'].share=parseFloat(this.value)||0;">
+            <div class="field-hint">100% om enda medlet</div>
+          </div>
+        </div>
       </div>`;
-    }).join('')}`;
+    }).join('')}
+    <div class="info-box">
+      <strong>Exempel:</strong> Du kör bil 25 km till stationen (3 dagar/vecka, 50% av sträckan) och tar tåg 25 km resten (3 dagar/vecka, 50% av sträckan).
+    </div>`;
 }
 
 function renderVehicle(c) {
@@ -703,11 +712,10 @@ function selectPill(key, val, elem, groupId) {
   elem.classList.add('selected');
 }
 
-function renderSummary(c) {
+function calcEmissions() {
   const modes = answers.transport_modes || [];
-  const days = parseInt(answers.commute_days) || 0;
   const weeks = parseInt(answers.work_weeks) || 47;
-  const distances = answers.distances || {};
+  const md = answers.mode_data || {};
   const carpoolPersons = parseInt(answers.carpool) || 1;
   const carpoolPct = parseInt(answers.carpool_pct) || 0;
 
@@ -715,8 +723,12 @@ function renderSummary(c) {
   const rows = [];
 
   modes.forEach(id => {
-    const km = distances[id] || 0;
+    const d = md[id] || {};
+    const km = parseFloat(d.km) || 0;
+    const modeDays = parseFloat(d.days) || parseInt(answers.commute_days) || 0;
+    const share = (parseFloat(d.share) || 100) / 100;
     if (km <= 0) return;
+
     let ef = 0;
     const m = TRANSPORT_MODES.find(t => t.id === id);
 
@@ -726,18 +738,23 @@ function renderSummary(c) {
       ef = (EF.car[fuel] && EF.car[fuel][size]) || 0.17;
       const soloFraction = 1 - (carpoolPct / 100);
       const poolFraction = carpoolPct / 100;
-      const effectiveEF = ef * (soloFraction + poolFraction / carpoolPersons);
-      ef = effectiveEF;
+      ef = ef * (soloFraction + poolFraction / carpoolPersons);
     } else if (id === 'mc') {
       ef = EF.mc[answers.mc_fuel || 'Bensin'] || 0.11;
     } else {
       ef = EF[id] || 0;
     }
 
-    const annual = km * 2 * days * weeks * ef;
+    const annual = km * share * 2 * modeDays * weeks * ef;
     totalCO2 += annual;
-    rows.push({ icon: m.icon, label: m.label, km, days, co2: annual });
+    rows.push({ icon: m.icon, label: m.label, km, days: modeDays, share: Math.round(share * 100), co2: annual });
   });
+
+  return { totalCO2, rows };
+}
+
+function renderSummary(c) {
+  const { totalCO2, rows } = calcEmissions();
 
   c.innerHTML = `
     <div class="q-category">Sammanfattning</div>
@@ -751,12 +768,13 @@ function renderSummary(c) {
       </div>
       ${rows.length > 0 ? `
       <table class="summary-table">
-        <thead><tr><th>Transportmedel</th><th>Enkel sträcka</th><th>Dagar/v</th><th style="text-align:right">kg CO\u2082e/år</th></tr></thead>
+        <thead><tr><th>Transportmedel</th><th>Sträcka</th><th>Dagar/v</th><th>Andel</th><th style="text-align:right">kg CO\u2082e/år</th></tr></thead>
         <tbody>
           ${rows.map(r => `<tr>
             <td class="mode-col">${r.icon} ${r.label}</td>
             <td>${r.km} km</td>
             <td>${r.days}</td>
+            <td>${r.share}%</td>
             <td class="num-col">${Math.round(r.co2)}</td>
           </tr>`).join('')}
         </tbody>
@@ -764,7 +782,7 @@ function renderSummary(c) {
     </div>
 
     <div class="info-box">
-      <strong>Beräkningsmetod:</strong> CO\u2082e = sträcka (km) \u00d7 2 (tur/retur) \u00d7 dagar/vecka \u00d7 veckor/år \u00d7 emissionsfaktor (kg CO\u2082e/pkm).
+      <strong>Beräkningsmetod:</strong> CO\u2082e = sträcka (km) \u00d7 andel \u00d7 2 (tur/retur) \u00d7 dagar/vecka \u00d7 veckor/år \u00d7 emissionsfaktor (kg CO\u2082e/pkm).
       Emissionsfaktorer baserade på svenska genomsnittsvärden (Naturvårdsverket / DEFRA 2024).
       Samåkning justerar bilutsläpp med 1/antal passagerare.
     </div>`;
@@ -776,33 +794,10 @@ async function submitAndFinish() {
   el('nextLabel').textContent = 'Skickar...';
 
   const modes = answers.transport_modes || [];
-  const days = parseInt(answers.commute_days) || 0;
-  const weeks = parseInt(answers.work_weeks) || 47;
-  const distances = answers.distances || {};
+  const md = answers.mode_data || {};
+  const { totalCO2, rows } = calcEmissions();
 
-  let totalCO2 = 0;
-  const modeDetails = [];
-  modes.forEach(id => {
-    const km = distances[id] || 0;
-    let ef = 0;
-    if (id === 'car') {
-      const fuel = answers.car_fuel || 'Bensin';
-      const size = answers.car_size || 'medium';
-      ef = (EF.car[fuel] && EF.car[fuel][size]) || 0.17;
-      const carpoolPersons = parseInt(answers.carpool) || 1;
-      const carpoolPct = parseInt(answers.carpool_pct) || 0;
-      const soloFraction = 1 - (carpoolPct / 100);
-      const poolFraction = carpoolPct / 100;
-      ef = ef * (soloFraction + poolFraction / carpoolPersons);
-    } else if (id === 'mc') {
-      ef = EF.mc[answers.mc_fuel || 'Bensin'] || 0.11;
-    } else {
-      ef = EF[id] || 0;
-    }
-    const annual = km * 2 * days * weeks * ef;
-    totalCO2 += annual;
-    modeDetails.push(`${id}:${km}km:${Math.round(annual)}kg`);
-  });
+  const modeDetails = rows.map(r => `${r.label}:${r.km}km:${r.days}d:${r.share}%:${Math.round(r.co2)}kg`);
 
   const payload = {
     timestamp: new Date().toISOString(),
@@ -812,7 +807,7 @@ async function submitAndFinish() {
     commute_days: answers.commute_days || '',
     work_weeks: answers.work_weeks || '47',
     transport_modes: modes.join(', '),
-    distances_km: modes.map(id => `${id}:${distances[id]||0}`).join(', '),
+    distances_km: modes.map(id => `${id}:${(md[id]||{}).km||0}`).join(', '),
     car_fuel: answers.car_fuel || '',
     car_size: answers.car_size || '',
     carpool: answers.carpool || '1',
