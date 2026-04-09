@@ -872,16 +872,12 @@ async function submitAndFinish() {
     total_co2e_kg: Math.round(totalCO2),
   };
 
-  try {
-    if (SHEETS_URL && SHEETS_URL !== '%%GOOGLE_SHEETS_URL%%') {
-      await fetch(SHEETS_URL, {
-        method: 'POST', mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-    }
-  } catch (e) {
-    console.warn('Sheet submission error:', e);
+  if (SHEETS_URL && SHEETS_URL !== '%%GOOGLE_SHEETS_URL%%') {
+    fetch(SHEETS_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(e => console.warn('Sheet submission error:', e));
   }
 
   cur = TOTAL_STEPS;
