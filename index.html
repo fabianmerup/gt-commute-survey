@@ -245,9 +245,21 @@
     .input-field:focus { outline: none; border-color: var(--purple); box-shadow: 0 0 0 3px rgba(88,44,131,0.1); }
     .input-field::placeholder { color: var(--text-3); }
 
+    #modeDetailsContainer { margin-top: 18px; }
+    .mode-details-intro {
+      font-size: 13px; font-weight: 600; color: var(--text-2);
+      margin-bottom: 12px; padding-bottom: 8px;
+      border-bottom: 1px solid var(--card-border);
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
     .mode-detail-card {
       background: var(--card-flat); border: 1.5px solid var(--card-border);
       border-radius: var(--radius); padding: 20px; margin-bottom: 14px;
+      animation: cardSlideIn 0.3s ease-out;
+    }
+    @keyframes cardSlideIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
     }
     .mode-detail-header { font-size: 15px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
     .mode-detail-header .mode-emoji { font-size: 20px; }
@@ -408,8 +420,8 @@ const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwhfq-1XT_WcIdPCrQK-
 
 let answers = {};
 let cur = 0;
-// 0=intro, 1=office, 2=select modes, 3=per-mode details, 4=vehicle details, 5=summary, 6=thanks
-const TOTAL_STEPS = 6;
+// 0=intro, 1=office, 2=transport (select + details inline), 3=vehicle details, 4=summary, 5=thanks
+const TOTAL_STEPS = 5;
 
 function el(id) { return document.getElementById(id); }
 
@@ -434,8 +446,7 @@ function updateNext() {
   }
   let ok = false;
   if (cur === 1) ok = !!answers.office && !!answers.commute_days;
-  else if (cur === 2) ok = (answers.transport_modes || []).length > 0;
-  else if (cur === 3) {
+  else if (cur === 2) {
     const md = answers.mode_data || {};
     ok = (answers.transport_modes || []).some(id => md[id] && md[id].km > 0);
   }
@@ -460,9 +471,8 @@ function renderSlide(dir) {
   if (cur === 0) renderIntro(inner);
   else if (cur === 1) renderOffice(inner);
   else if (cur === 2) renderTransport(inner);
-  else if (cur === 3) renderModeDetails(inner);
-  else if (cur === 4) renderVehicle(inner);
-  else if (cur === 5) renderSummary(inner);
+  else if (cur === 3) renderVehicle(inner);
+  else if (cur === 4) renderSummary(inner);
   else renderThankYou(inner);
 
   slide.appendChild(inner);
@@ -482,14 +492,14 @@ function render() { renderSlide('forward'); }
 function goBack() {
   if (cur <= 0) return;
   cur--;
-  if (cur === 4 && !needsVehicleDetails()) cur--;
+  if (cur === 3 && !needsVehicleDetails()) cur--;
   renderSlide('back');
 }
 
 function goNext() {
   if (cur === TOTAL_STEPS - 1) { submitAndFinish(); return; }
   cur++;
-  if (cur === 4 && !needsVehicleDetails()) cur++;
+  if (cur === 3 && !needsVehicleDetails()) cur++;
   renderSlide('forward');
 }
 
@@ -581,10 +591,11 @@ function renderOffice(c) {
 
 function renderTransport(c) {
   const modes = answers.transport_modes || [];
+  if (!answers.mode_data) answers.mode_data = {};
   c.innerHTML = `
     <div class="q-category">Transportmedel</div>
     <h2 class="q-title">Hur tar du dig till jobbet?</h2>
-    <p class="q-desc">Välj alla transportmedel du använder. Du kan välja flera om du kombinerar (t.ex. bil + tåg).</p>
+    <p class="q-desc">Välj dina transportmedel och fyll i sträcka för varje.</p>
     <div class="cards-grid" id="transportGrid">
       ${TRANSPORT_MODES.map(m => `
         <div class="option-card ${modes.includes(m.id)?'selected':''}" data-id="${m.id}" onclick="toggleTransport('${m.id}', this)">
@@ -593,61 +604,80 @@ function renderTransport(c) {
           <span class="multi-check"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
         </div>
       `).join('')}
-    </div>`;
+    </div>
+    <div id="modeDetailsContainer"></div>`;
+  rebuildModeDetails();
 }
 
 function toggleTransport(id, elem) {
   let modes = answers.transport_modes || [];
-  if (modes.includes(id)) modes = modes.filter(m => m !== id);
-  else modes.push(id);
+  if (modes.includes(id)) {
+    modes = modes.filter(m => m !== id);
+    delete answers.mode_data[id];
+  } else {
+    modes.push(id);
+  }
   answers.transport_modes = modes;
   elem.classList.toggle('selected');
+  rebuildModeDetails();
   updateNext();
 }
 
-function renderModeDetails(c) {
+function rebuildModeDetails() {
+  const container = document.getElementById('modeDetailsContainer');
+  if (!container) return;
   const modes = answers.transport_modes || [];
   if (!answers.mode_data) answers.mode_data = {};
   const defaultDays = parseInt(answers.commute_days) || 3;
   const singleMode = modes.length === 1;
 
-  c.innerHTML = `
-    <div class="q-category">Sträckor & fördelning</div>
-    <h2 class="q-title">Beskriv din pendling per transportmedel</h2>
-    <p class="q-desc">Ange enkel sträcka (hem \u2192 kontor), hur många dagar/vecka du använder varje medel, och hur stor andel av resan det utgör.</p>
+  if (modes.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="mode-details-intro">Fyll i uppgifter för varje transportmedel:</div>
     ${modes.map(id => {
       const m = TRANSPORT_MODES.find(t => t.id === id);
       const d = answers.mode_data[id] || { km: '', days: defaultDays, share: singleMode ? 100 : '' };
       if (!answers.mode_data[id]) answers.mode_data[id] = d;
-      return `<div class="mode-detail-card">
+      return `<div class="mode-detail-card" data-mode="${id}">
         <div class="mode-detail-header"><span class="mode-emoji">${m.icon}</span> ${m.label}</div>
         <div class="mode-detail-fields">
           <div class="mode-field">
             <label>Enkel sträcka (km) <span class="req">*</span></label>
-            <input type="number" placeholder="t.ex. 15" min="0" step="0.5"
+            <input type="number" inputmode="decimal" placeholder="t.ex. 15" min="0" step="0.5"
               value="${d.km||''}"
               oninput="answers.mode_data['${id}'].km=parseFloat(this.value)||0; updateNext();">
             <div class="field-hint">En väg, hem \u2192 kontor</div>
           </div>
           <div class="mode-field">
-            <label>Dagar/vecka med detta medel</label>
-            <input type="number" placeholder="${defaultDays}" min="0" max="7" step="1"
+            <label>Dagar/vecka</label>
+            <input type="number" inputmode="numeric" placeholder="${defaultDays}" min="0" max="7" step="1"
               value="${d.days||''}"
               oninput="answers.mode_data['${id}'].days=parseFloat(this.value)||0;">
           </div>
           <div class="mode-field">
-            <label>Andel av sträckan (%)</label>
-            <input type="number" placeholder="100" min="0" max="100" step="5"
+            <label>Andel av resan (%)</label>
+            <input type="number" inputmode="numeric" placeholder="${singleMode ? '100' : ''}" min="0" max="100" step="5"
               value="${d.share||''}"
               oninput="answers.mode_data['${id}'].share=parseFloat(this.value)||0;">
-            <div class="field-hint">100% om enda medlet</div>
+            <div class="field-hint">${singleMode ? '100% om enda medlet' : 'T.ex. 50% bil, 50% tåg'}</div>
           </div>
         </div>
       </div>`;
     }).join('')}
     <div class="info-box">
-      <strong>Exempel:</strong> Du kör bil 25 km till stationen (3 dagar/vecka, 50% av sträckan) och tar tåg 25 km resten (3 dagar/vecka, 50% av sträckan).
+      <strong>Tips:</strong> Om du kombinerar medel, ange andelen av sträckan varje medel står för. T.ex. bil 50%, tåg 50%.
     </div>`;
+
+  if (modes.length > 0) {
+    setTimeout(() => {
+      const firstNew = container.querySelector('.mode-detail-card');
+      if (firstNew) firstNew.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 100);
+  }
 }
 
 function renderVehicle(c) {
