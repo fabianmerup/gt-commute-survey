@@ -273,6 +273,7 @@
     }
     .mode-field input:focus { outline: none; border-color: var(--purple); box-shadow: 0 0 0 3px rgba(88,44,131,0.1); }
     .mode-field .field-hint { font-size: 11px; color: var(--text-3); margin-top: 4px; }
+    .field-error { font-size: 11px; color: #d44; margin-top: 3px; font-weight: 600; }
 
     .pill-group { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
     .pill {
@@ -416,13 +417,28 @@ const EF = {
   mc: { Bensin: 0.11, El: 0.02 }, ferry: 0.19
 };
 
-function clamp(input) {
+function validate(input) {
   const min = parseFloat(input.min);
   const max = parseFloat(input.max);
-  let v = parseFloat(input.value);
-  if (isNaN(v)) return;
-  if (!isNaN(max) && v > max) { v = max; input.value = v; }
-  if (!isNaN(min) && v < min) { v = min; input.value = v; }
+  const v = parseFloat(input.value);
+  let msg = '';
+  if (input.value !== '' && !isNaN(v)) {
+    if (!isNaN(max) && v > max) msg = `Max ${max}`;
+    else if (!isNaN(min) && v < min) msg = `Min ${min}`;
+  }
+  let hint = input.parentElement.querySelector('.field-error');
+  if (msg) {
+    input.style.borderColor = '#d44';
+    if (!hint) { hint = document.createElement('div'); hint.className = 'field-error'; input.after(hint); }
+    hint.textContent = msg;
+  } else {
+    input.style.borderColor = '';
+    if (hint) hint.remove();
+  }
+}
+
+function hasInvalidFields() {
+  return document.querySelectorAll('.field-error').length > 0;
 }
 
 const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbwhfq-1XT_WcIdPCrQK-MhFzzPYuGDcE_WPia8HhclMEh1YCdb_gAorGX-pS38so9emPg/exec';
@@ -460,6 +476,7 @@ function updateNext() {
     ok = (answers.transport_modes || []).some(id => md[id] && md[id].km > 0);
   }
   else ok = true;
+  if (ok && hasInvalidFields()) ok = false;
   label.textContent = 'Nästa';
   btn.disabled = !ok;
 }
@@ -578,7 +595,7 @@ function renderOffice(c) {
     <div class="input-wrap">
       <label class="input-label">Anställningsgrad (%)</label>
       <input type="number" class="input-field" placeholder="100" min="10" max="100" value="${answers.employment_pct||''}"
-        oninput="clamp(this); answers.employment_pct=this.value;">
+        oninput="validate(this); answers.employment_pct=this.value;">
     </div>
 
     <div class="dropdown-wrap">
@@ -593,7 +610,7 @@ function renderOffice(c) {
     <div class="input-wrap">
       <label class="input-label">Arbetsveckor per år</label>
       <input type="number" class="input-field" placeholder="47" min="20" max="52" value="${answers.work_weeks||''}"
-        oninput="clamp(this); answers.work_weeks=this.value;">
+        oninput="validate(this); answers.work_weeks=this.value;">
       <div class="input-hint">Typiskt 46\u201348 (exkl. semester)</div>
     </div>`;
 }
@@ -658,20 +675,20 @@ function rebuildModeDetails() {
             <label>Enkel sträcka (km) <span class="req">*</span></label>
             <input type="number" inputmode="decimal" placeholder="t.ex. 15" min="0" max="500" step="0.5"
               value="${d.km||''}"
-              oninput="clamp(this); answers.mode_data['${id}'].km=parseFloat(this.value)||0; updateNext();">
+              oninput="validate(this); answers.mode_data['${id}'].km=parseFloat(this.value)||0; updateNext();">
             <div class="field-hint">En väg, hem \u2192 kontor</div>
           </div>
           <div class="mode-field">
             <label>Dagar/vecka</label>
             <input type="number" inputmode="numeric" placeholder="${defaultDays}" min="0" max="7" step="1"
               value="${d.days||''}"
-              oninput="clamp(this); answers.mode_data['${id}'].days=parseFloat(this.value)||0;">
+              oninput="validate(this); answers.mode_data['${id}'].days=parseFloat(this.value)||0;">
           </div>
           <div class="mode-field">
             <label>Andel av resan (%)</label>
             <input type="number" inputmode="numeric" placeholder="${singleMode ? '100' : ''}" min="0" max="100" step="5"
               value="${d.share||''}"
-              oninput="clamp(this); answers.mode_data['${id}'].share=parseFloat(this.value)||0;">
+              oninput="validate(this); answers.mode_data['${id}'].share=parseFloat(this.value)||0;">
             <div class="field-hint">${singleMode ? '100% om enda medlet' : 'T.ex. 50% bil, 50% tåg'}</div>
           </div>
         </div>
@@ -721,7 +738,7 @@ function renderVehicle(c) {
       <div class="input-wrap">
         <label class="input-label">Andel samåkningsdagar (%)</label>
         <input type="number" class="input-field" placeholder="0" min="0" max="100" value="${answers.carpool_pct||''}"
-          oninput="clamp(this); answers.carpool_pct=this.value;">
+          oninput="validate(this); answers.carpool_pct=this.value;">
         <div class="input-hint">Hur ofta av dina bildagar</div>
       </div>`;
   }
