@@ -843,6 +843,28 @@ function renderSummary(c) {
     </div>`;
 }
 
+const PENDING_KEY = 'gt_commute_pending';
+
+function getPendingQueue() {
+  try { return JSON.parse(localStorage.getItem(PENDING_KEY)) || []; }
+  catch { return []; }
+}
+
+function savePendingQueue(queue) {
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); } catch {}
+}
+
+async function sendPayload(payload) {
+  await fetch(SHEETS_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(payload).toString()
+  });
+}
+
+let _submitFailed = false;
+
 async function submitAndFinish() {
   const btn = el('nextBtn');
   btn.disabled = true;
@@ -872,9 +894,20 @@ async function submitAndFinish() {
     total_co2e_kg: Math.round(totalCO2),
   };
 
+  const queue = getPendingQueue();
+  queue.push(payload);
+  savePendingQueue(queue);
+
+  _submitFailed = false;
+
   if (SHEETS_URL && SHEETS_URL !== '%%GOOGLE_SHEETS_URL%%') {
-    const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-    navigator.sendBeacon(SHEETS_URL, blob);
+    try {
+      await sendPayload(payload);
+      const updated = getPendingQueue().filter(p => p.timestamp !== payload.timestamp);
+      savePendingQueue(updated);
+    } catch {
+      _submitFailed = true;
+    }
   }
 
   cur = TOTAL_STEPS;
@@ -882,11 +915,15 @@ async function submitAndFinish() {
 }
 
 function renderThankYou(c) {
+  const offlineNote = _submitFailed
+    ? '<p style="font-size:13px; color:var(--text-3); margin-bottom:24px; background:rgba(88,44,131,0.05); border-radius:8px; padding:10px 16px;">Ditt svar har sparats lokalt och skickas automatiskt nästa gång.</p>'
+    : '';
   c.innerHTML = `
     <div class="thanks-wrap">
       <div class="thanks-icon">✅</div>
       <h1 class="thanks-title">Tack för ditt svar!</h1>
       <p class="thanks-desc">Din pendlingsdata har registrerats och kommer att inkluderas i klimatberäkningen enligt GHG Protocol Scope 3 Kategori 7.</p>
+      ${offlineNote}
       <button class="start-btn" onclick="answers={}; cur=0; render();">
         <span>Skicka in nytt svar</span>
       </button>
@@ -900,6 +937,20 @@ function renderThankYou(c) {
     </div>`;
   el('navBar').style.display = 'none';
 }
+
+(function flushPendingSubmissions() {
+  if (!SHEETS_URL || SHEETS_URL === '%%GOOGLE_SHEETS_URL%%') return;
+  const queue = getPendingQueue();
+  if (!queue.length) return;
+  const remaining = [];
+  let chain = Promise.resolve();
+  queue.forEach(function(payload) {
+    chain = chain.then(function() {
+      return sendPayload(payload).catch(function() { remaining.push(payload); });
+    });
+  });
+  chain.then(function() { savePendingQueue(remaining); });
+})();
 
 render();
 </script>
