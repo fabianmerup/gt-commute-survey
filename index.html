@@ -844,6 +844,9 @@ function renderSummary(c) {
 }
 
 const PENDING_KEY = 'gt_commute_pending';
+const ARCHIVE_KEY = 'gt_commute_archive';
+const ARCHIVE_MAX = 500;
+const ARCHIVE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function getPendingQueue() {
   try { return JSON.parse(localStorage.getItem(PENDING_KEY)) || []; }
@@ -854,13 +857,107 @@ function savePendingQueue(queue) {
   try { localStorage.setItem(PENDING_KEY, JSON.stringify(queue)); } catch {}
 }
 
-async function sendPayload(payload) {
-  await fetch(SHEETS_URL, {
-    method: 'POST',
-    mode: 'no-cors',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify(payload)
+function getArchive() {
+  try { return JSON.parse(localStorage.getItem(ARCHIVE_KEY)) || []; }
+  catch { return []; }
+}
+
+function saveArchive(archive) {
+  const cutoff = Date.now() - ARCHIVE_TTL_MS;
+  const pruned = archive.filter(e => (e._archivedAt || 0) > cutoff);
+  while (pruned.length > ARCHIVE_MAX) pruned.shift();
+  try { localStorage.setItem(ARCHIVE_KEY, JSON.stringify(pruned)); } catch {}
+}
+
+function addToArchive(payload, sent) {
+  const archive = getArchive();
+  const entry = Object.assign({}, payload, {
+    _sent: !!sent,
+    _sentAt: sent ? new Date().toISOString() : null,
+    _archivedAt: Date.now()
   });
+  archive.push(entry);
+  saveArchive(archive);
+}
+
+function markArchiveSent(timestamp) {
+  const archive = getArchive();
+  const entry = archive.find(e => e.timestamp === timestamp);
+  if (entry) {
+    entry._sent = true;
+    entry._sentAt = new Date().toISOString();
+    saveArchive(archive);
+  }
+}
+
+async function sendPayload(payload) {
+  try {
+    await fetch(SHEETS_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload)
+    });
+    return true;
+  } catch (e) { /* fall through */ }
+
+  try {
+    const blob = new Blob([JSON.stringify(payload)], { type: 'text/plain' });
+    const ok = navigator.sendBeacon(SHEETS_URL, blob);
+    if (ok) return true;
+  } catch (e) { /* fall through */ }
+
+  try {
+    const iframe = document.createElement('iframe');
+    iframe.name = 'gt_submit_' + Date.now();
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = SHEETS_URL;
+    form.target = iframe.name;
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'payload';
+    input.value = JSON.stringify(payload);
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
+    setTimeout(() => { form.remove(); iframe.remove(); }, 10000);
+    return true;
+  } catch (e) { /* all strategies failed */ }
+
+  return false;
+}
+
+function exportLocalData() {
+  const pending = getPendingQueue();
+  const archive = getArchive();
+  const all = archive.concat(pending.filter(p => !archive.some(a => a.timestamp === p.timestamp)));
+  if (!all.length) { alert('Inga sparade svar att exportera.'); return; }
+
+  const keys = Object.keys(all[0]).filter(k => !k.startsWith('_'));
+  const meta = ['_sent', '_sentAt'];
+  const header = keys.concat(meta);
+  const csvRows = [header.join(',')];
+
+  all.forEach(row => {
+    const vals = header.map(k => {
+      const v = row[k] == null ? '' : String(row[k]);
+      return '"' + v.replace(/"/g, '""') + '"';
+    });
+    csvRows.push(vals.join(','));
+  });
+
+  const csvStr = csvRows.join('\r\n');
+  const blob = new Blob(['\uFEFF' + csvStr], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'gt_commute_data_' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 1000);
 }
 
 let _submitFailed = false;
@@ -894,6 +991,8 @@ async function submitAndFinish() {
     total_co2e_kg: Math.round(totalCO2),
   };
 
+  addToArchive(payload, false);
+
   const queue = getPendingQueue();
   queue.push(payload);
   savePendingQueue(queue);
@@ -901,11 +1000,12 @@ async function submitAndFinish() {
   _submitFailed = false;
 
   if (SHEETS_URL && SHEETS_URL !== '%%GOOGLE_SHEETS_URL%%') {
-    try {
-      await sendPayload(payload);
+    const ok = await sendPayload(payload);
+    if (ok) {
       const updated = getPendingQueue().filter(p => p.timestamp !== payload.timestamp);
       savePendingQueue(updated);
-    } catch {
+      markArchiveSent(payload.timestamp);
+    } else {
       _submitFailed = true;
     }
   }
@@ -920,20 +1020,21 @@ function renderThankYou(c) {
     : '';
   c.innerHTML = `
     <div class="thanks-wrap">
-      <div class="thanks-icon">✅</div>
-      <h1 class="thanks-title">Tack för ditt svar!</h1>
-      <p class="thanks-desc">Din pendlingsdata har registrerats och kommer att inkluderas i klimatberäkningen enligt GHG Protocol Scope 3 Kategori 7.</p>
+      <div class="thanks-icon">\u2705</div>
+      <h1 class="thanks-title">Tack f\u00f6r ditt svar!</h1>
+      <p class="thanks-desc">Din pendlingsdata har registrerats och kommer att inkluderas i klimatber\u00e4kningen enligt GHG Protocol Scope 3 Kategori 7.</p>
       ${offlineNote}
       <button class="start-btn" onclick="answers={}; cur=0; render();">
         <span>Skicka in nytt svar</span>
       </button>
       <p class="thanks-method">
         Metodik enligt GHG Protocol, Technical Guidance, Chapter 7: Employee Commuting.<br>
-        Distance-based method · Scope 3 Kategori 7
+        Distance-based method \u00b7 Scope 3 Kategori 7
       </p>
       <div class="thanks-powered">
         Powered by Bardo
       </div>
+      <a href="#" onclick="event.preventDefault(); exportLocalData();" style="display:inline-block; margin-top:16px; font-size:11px; color:var(--text-3); text-decoration:none; border-bottom:1px dotted var(--text-3);">Problem? Exportera svar</a>
     </div>`;
   el('navBar').style.display = 'none';
 }
@@ -946,7 +1047,10 @@ function renderThankYou(c) {
   let chain = Promise.resolve();
   queue.forEach(function(payload) {
     chain = chain.then(function() {
-      return sendPayload(payload).catch(function() { remaining.push(payload); });
+      return sendPayload(payload).then(function(ok) {
+        if (ok) { markArchiveSent(payload.timestamp); }
+        else { remaining.push(payload); }
+      }).catch(function() { remaining.push(payload); });
     });
   });
   chain.then(function() { savePendingQueue(remaining); });
